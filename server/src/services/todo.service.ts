@@ -21,20 +21,21 @@ export const todoService = {
             created: new Date()
         };
         todoList.push(newTodo);
+        console.log(`[TodoList 생성 완료] 현재 갯수: ${todoList.length}개 - ${Date()}`)
         return newTodo;
     },
 
-    // 투두 수정 (상태 변경 또는 제목 변경)
   updateTodo: (todoNum: number, title?: string, completed?: boolean): Todo | null => {
     const index = todoList.findIndex(t => t.todoNum === todoNum);
     if (index === -1) return null; // 찾지 못함
 
-    // 기존 데이터에 전달받은 값만 덮어쓰기 (Spread Operator)
     todoList[index] = { 
       ...todoList[index], 
       ...(title !== undefined && { title }), 
       ...(completed !== undefined && { completed }) 
     };
+    if (completed === true) console.log(`[TodoList 수정 완료 --- 상태 완료!] 현재 TODO-ID: [${todoNum}] - ${Date()}`)
+    else console.log(`[TodoList 수정 완료 --- 상태 미완료!] 현재 TODO-ID: [${todoNum}] - ${Date()}`)
     return todoList[index];
   },
 
@@ -42,6 +43,7 @@ export const todoService = {
   deleteTodo: (todoNum: number): boolean => {
     const initialLength = todoList.length;
     todoList = todoList.filter(t => t.todoNum !== todoNum);
-    return todoList.length < initialLength; // 삭제 전후 길이를 비교해 성공 여부 반환
+    console.log(`[TodoList 삭제완료] 삭제된 TODO-ID: [${todoNum}] - 현재 남은 갯수: ${todoList.length}개 - ${Date()}`)
+    return todoList.length < initialLength;
   }
 }
