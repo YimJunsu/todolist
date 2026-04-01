@@ -1,0 +1,107 @@
+<svg width="760" height="600" xmlns="http://www.w3.org/2000/svg" font-family="'Malgun Gothic', Arial, sans-serif">
+  <defs>
+    <marker id="a" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0,8 3,0 6" fill="#555"/>
+    </marker>
+    <marker id="ar" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0,8 3,0 6" fill="#C62828"/>
+    </marker>
+    <marker id="ag" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0,8 3,0 6" fill="#2E7D32"/>
+    </marker>
+  </defs>
+
+  <!-- Lane backgrounds -->
+  <rect x="0" y="44" width="253" height="556" fill="#EBF5FB"/>
+  <rect x="253" y="44" width="254" height="556" fill="#F3EEF9"/>
+  <rect x="507" y="44" width="253" height="556" fill="#EAFAF1"/>
+
+  <!-- Lane dividers -->
+  <line x1="253" y1="0" x2="253" y2="600" stroke="#B0BEC5" stroke-width="1"/>
+  <line x1="507" y1="0" x2="507" y2="600" stroke="#B0BEC5" stroke-width="1"/>
+
+  <!-- Lane headers -->
+  <rect x="0" y="0" width="253" height="44" fill="#1565C0"/>
+  <text x="126" y="27" fill="white" text-anchor="middle" font-size="14" font-weight="bold">클라이언트 A</text>
+
+  <rect x="253" y="0" width="254" height="44" fill="#6A1B9A"/>
+  <text x="380" y="27" fill="white" text-anchor="middle" font-size="14" font-weight="bold">서버</text>
+
+  <rect x="507" y="0" width="253" height="44" fill="#1B5E20"/>
+  <text x="633" y="27" fill="white" text-anchor="middle" font-size="14" font-weight="bold">클라이언트 B</text>
+
+  <!-- ① 텍스트 입력 -->
+  <rect x="30" y="64" width="193" height="38" fill="#1E88E5" rx="5"/>
+  <text x="126" y="88" fill="white" text-anchor="middle" font-size="12">① 사용자 텍스트 입력</text>
+  <line x1="126" y1="102" x2="126" y2="120" stroke="#555" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- ② diffToOps -->
+  <rect x="30" y="124" width="193" height="38" fill="#42A5F5" rx="5"/>
+  <text x="126" y="140" fill="white" text-anchor="middle" font-size="11">② diffToOps(old, new)</text>
+  <text x="126" y="155" fill="white" text-anchor="middle" font-size="11">→ TextOp[] 생성</text>
+  <line x1="126" y1="162" x2="126" y2="180" stroke="#555" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- ③ bufferOps / flushBuffer -->
+  <rect x="30" y="184" width="193" height="38" fill="#42A5F5" rx="5"/>
+  <text x="126" y="199" fill="white" text-anchor="middle" font-size="11">③ bufferOps에 추가</text>
+  <text x="126" y="214" fill="white" text-anchor="middle" font-size="11">flushBuffer() 실행</text>
+
+  <!-- op send arrow A → Server -->
+  <line x1="223" y1="203" x2="282" y2="203" stroke="#C62828" stroke-width="2" marker-end="url(#ar)"/>
+  <text x="252" y="197" fill="#C62828" text-anchor="middle" font-size="9" font-weight="bold">{ type:'op' }</text>
+
+  <!-- ④ 서버: op 수신 -->
+  <rect x="283" y="184" width="194" height="38" fill="#8E24AA" rx="5"/>
+  <text x="380" y="199" fill="white" text-anchor="middle" font-size="11">④ op 수신</text>
+  <text x="380" y="214" fill="white" text-anchor="middle" font-size="10">history.slice(clientRevision)</text>
+  <line x1="380" y1="222" x2="380" y2="240" stroke="#555" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- ⑤ transformAgainstAll -->
+  <rect x="283" y="244" width="194" height="38" fill="#8E24AA" rx="5"/>
+  <text x="380" y="259" fill="white" text-anchor="middle" font-size="11">⑤ transformAgainstAll</text>
+  <text x="380" y="274" fill="white" text-anchor="middle" font-size="10">(clientOp, concurrentOps)</text>
+  <line x1="380" y1="282" x2="380" y2="300" stroke="#555" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- ⑥ applyOp + revision++ -->
+  <rect x="283" y="304" width="194" height="38" fill="#6A1B9A" rx="5"/>
+  <text x="380" y="319" fill="white" text-anchor="middle" font-size="11">⑥ applyOp(content, op)</text>
+  <text x="380" y="334" fill="white" text-anchor="middle" font-size="10">serverRevision++ · history 추가</text>
+  <line x1="380" y1="342" x2="380" y2="360" stroke="#555" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- ⑦ ack + broadcast -->
+  <rect x="283" y="364" width="194" height="38" fill="#4A148C" rx="5"/>
+  <text x="380" y="379" fill="white" text-anchor="middle" font-size="11">⑦ ack 전송 / op 브로드캐스트</text>
+  <text x="380" y="394" fill="white" text-anchor="middle" font-size="10">'ack' → A 본인 | 'op' → 나머지</text>
+
+  <!-- ack arrow Server → A -->
+  <line x1="283" y1="376" x2="224" y2="376" stroke="#2E7D32" stroke-width="2" marker-end="url(#ag)"/>
+  <text x="253" y="370" fill="#2E7D32" text-anchor="middle" font-size="9" font-weight="bold">ack</text>
+
+  <!-- broadcast arrow Server → B -->
+  <line x1="477" y1="391" x2="536" y2="391" stroke="#C62828" stroke-width="2" marker-end="url(#ar)"/>
+  <text x="506" y="385" fill="#C62828" text-anchor="middle" font-size="9" font-weight="bold">{ type:'op' }</text>
+
+  <!-- ⑧ A: ack 수신 -->
+  <rect x="30" y="364" width="193" height="38" fill="#1565C0" rx="5"/>
+  <text x="126" y="379" fill="white" text-anchor="middle" font-size="11">⑧ ack 수신</text>
+  <text x="126" y="394" fill="white" text-anchor="middle" font-size="11">inflight 해제 · revision 갱신</text>
+
+  <!-- ⑨ B: remote op 수신 -->
+  <rect x="537" y="364" width="193" height="38" fill="#2E7D32" rx="5"/>
+  <text x="633" y="379" fill="white" text-anchor="middle" font-size="11">⑨ remote op 수신</text>
+  <text x="633" y="394" fill="white" text-anchor="middle" font-size="11">transform(op, inflight/buffer)</text>
+  <line x1="633" y1="402" x2="633" y2="420" stroke="#555" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- ⑩ B: applyOp -->
+  <rect x="537" y="424" width="193" height="38" fill="#1B5E20" rx="5"/>
+  <text x="633" y="440" fill="white" text-anchor="middle" font-size="11">⑩ applyOp(localContent, op)</text>
+  <text x="633" y="456" fill="white" text-anchor="middle" font-size="11">로컬 문서 업데이트 · 화면 반영</text>
+
+  <!-- Convergence box -->
+  <rect x="60" y="490" width="640" height="50" fill="#FFF9C4" stroke="#F9A825" stroke-width="1.5" rx="6"/>
+  <text x="380" y="512" fill="#E65100" text-anchor="middle" font-size="13" font-weight="bold">✅ 최종 수렴</text>
+  <text x="380" y="531" fill="#BF360C" text-anchor="middle" font-size="11">클라이언트 A · B의 문서가 동일하게 수렴된다 — conflict 없이 두 입력 모두 반영</text>
+
+  <!-- Caption -->
+  <text x="380" y="583" fill="#90A4AE" text-anchor="middle" font-size="11" font-style="italic">OT (Operational Transformation) 작동 흐름 순서도</text>
+</svg>
