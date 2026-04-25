@@ -70,6 +70,7 @@ export type ClientOp = TextOp & {
  *   applyOp("hello world", { type: 'delete', position: 5, length: 6 })
  *   // → "hello"
  */
+// 순서11번
 export function applyOp(content: string, op: TextOp): string {
   if (op.type === 'insert') {
     // 삽입: [앞부분] + [삽입텍스트] + [뒷부분]
@@ -112,6 +113,7 @@ export function transformOp(op1: TextOp, op2: TextOp): TextOp {
  * op1을 ops 배열의 모든 작업에 대해 순서대로 변환합니다.
  * 서버가 클라이언트의 작업을 히스토리에 있는 작업들에 맞게 변환할 때 사용합니다.
  */
+// 순서10번
 export function transformAgainstAll(op: TextOp, ops: TextOp[]): TextOp {
   let result = op;
   for (const against of ops) {

@@ -8,28 +8,45 @@
  * [OT]  동시 입력 → transform → 두 입력 모두 올바르게 반영됨
  *
  * ─────────────────────────────────────────────────────────────────
- * 클라이언트 OT 상태 머신
+ * 전체 동작 순서 (흐름별)
  * ─────────────────────────────────────────────────────────────────
  *
+ * ── [A] 접속 초기화 흐름 ──
+ *   A1. 컴포넌트 마운트 → connect() 호출
+ *   A2. WebSocket 연결 생성 (ws://host/ws)
+ *   A3. 서버로부터 { type: 'init', content, revision } 수신
+ *   A4. content·serverRevision 초기화 → textarea 표시
+ *
+ * ── [B] 로컬 편집 흐름 (내가 타이핑할 때) ──
+ *   B1. 사용자 입력 → handleChange 호출
+ *   B2. diffToOps(old, new) → TextOp[] 계산 (어디서 무엇이 바뀌었는지)
+ *   B3. 로컬 문서·UI 즉시 업데이트 (사용자 반응성 확보)
+ *   B4. 생성된 op를 bufferOps에 추가
+ *   B5. flushBuffer() 호출
+ *         → inflightOps가 비어있으면: bufferOps를 inflightOps로 이동 후 서버 전송
+ *         → inflightOps가 있으면: 대기 (ack 수신 후 자동 전송)
+ *
+ * ── [C] ack 수신 흐름 (내 작업이 서버에 적용됐을 때) ──
+ *   C1. 서버로부터 { type: 'ack', opId, revision } 수신
+ *   C2. inflightOps에서 해당 opId 제거 / serverRevision 갱신
+ *   C3. inflightOps가 비었으면 flushBuffer() → bufferOps 전송
+ *
+ * ── [D] remote op 수신 흐름 (다른 사용자가 편집했을 때) ──
+ *   D1. 서버로부터 { type: 'op', op, revision } 수신
+ *   D2. remoteOp를 나의 inflightOps에 대해 transform → remoteOp'
+ *         (내가 이미 서버에 보낸 작업 위에 상대 작업을 올바르게 적용)
+ *   D3. inflightOps를 원본 remoteOp에 대해 transform → inflightOps'
+ *         (서버에서 상대 작업 먼저 적용된 상태를 반영)
+ *   D4. bufferOps를 변환된 remoteOp'에 대해 transform → bufferOps'
+ *         (아직 전송 안 한 내 작업 위치도 보정)
+ *   D5. 변환된 remoteOp'를 로컬 문서에 적용 → UI 업데이트
+ *
+ * ─────────────────────────────────────────────────────────────────
+ * 상태 변수
+ * ─────────────────────────────────────────────────────────────────
  *   serverRevision  : 마지막으로 서버가 확인한(ack) revision 번호
- *   inflightOpRef   : 서버에 보냈으나 아직 ack를 받지 못한 작업 큐
+ *   inflightOpsRef  : 서버에 보냈으나 아직 ack를 받지 못한 작업 큐
  *   bufferOpsRef    : 로컬에서 생성됐지만 아직 서버에 보내지 않은 작업 큐
- *
- *         로컬 편집
- *            │
- *            ▼
- *     bufferOps에 추가
- *            │ inflightOps가 비어있으면
- *            ▼
- *     서버로 전송 → inflightOps로 이동
- *            │
- *     ┌──────┴──────┐
- *     │             │
- *  ack 수신      remote op 수신
- *     │             │
- *  inflight 해제  transform 후 로컬 적용
- *  buffer 전송   inflight/buffer도 transform
- *
  * ─────────────────────────────────────────────────────────────────
  */
 
@@ -88,18 +105,22 @@ function EditorPage() {
   // ──────────────────────────────────────────────────────────────
 
   /**
-   * bufferOps를 서버로 전송합니다.
+   * [B5] bufferOps를 서버로 전송합니다.
    *
    * 호출 조건: inflightOps가 비어있을 때만 호출해야 합니다.
    * (한 번에 하나의 작업만 inflight 상태로 유지 — 단순 OT 구현)
+   *
+   * 호출 시점:
+   *   - B4 이후 (로컬 편집 직후, inflight 없을 때)
+   *   - C3 이후 (ack 수신으로 inflight 비었을 때)
    */
   const flushBuffer = useCallback(() => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     if (bufferOpsRef.current.length === 0) return;
-    if (inflightOpsRef.current.length > 0) return; // 아직 대기 중인 inflight 있음
+    if (inflightOpsRef.current.length > 0) return; // 아직 대기 중인 inflight 있으면 전송 보류
 
-    // bufferOps를 모두 inflight로 이동하고 서버에 전송
+    // bufferOps를 모두 inflightOps로 이동하고 서버에 전송
     const opsToSend = bufferOpsRef.current.splice(0);
     const clientOps: ClientOp[] = opsToSend.map(op => ({
       ...op,
@@ -109,8 +130,9 @@ function EditorPage() {
 
     inflightOpsRef.current = clientOps;
 
-    // 각 작업을 개별 메시지로 전송
+    // 각 작업을 개별 메시지로 서버 전송 (→ 서버에서 C1 ack 응답)
     for (const clientOp of clientOps) {
+      // 순서7번
       ws.send(JSON.stringify({ type: 'op', op: clientOp }));
       console.log(`[OT] → 서버 전송: ${clientOp.type} pos=${clientOp.position} rev=${clientOp.revision}`);
     }
@@ -121,6 +143,7 @@ function EditorPage() {
   // ──────────────────────────────────────────────────────────────
 
   const connect = useCallback(() => {
+    // [A2] WebSocket 연결 생성
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws`);
     wsRef.current = ws;
@@ -133,31 +156,38 @@ function EditorPage() {
     ws.onmessage = (event: MessageEvent) => {
       const message = JSON.parse(event.data);
 
-      // ── 초기화: 서버의 현재 문서 상태 수신 ──
+      // ── [A3·A4] 초기화: 서버의 현재 문서 상태 수신 ──
+      // 순서3번
       if (message.type === 'init') {
+        // [A3] 서버로부터 { type: 'init', content, revision } 수신
+        // [A4] content·serverRevision 초기화 → textarea 표시
         contentRef.current = message.content;
         setContent(message.content);
         serverRevisionRef.current = message.revision;
         console.log(`[OT] 초기화 — revision=${message.revision}`);
       }
 
-      // ── ack: 내가 보낸 작업이 서버에서 승인됨 ──
+      // ── [C1·C2·C3] ack: 내가 보낸 작업이 서버에서 승인됨 ──
+      // 순서15번 - 클라이언트에서a ack 처리
       if (message.type === 'ack') {
-        // ack된 opId와 일치하는 작업을 inflight에서 제거
+        // [C1] 서버로부터 { type: 'ack', opId, revision } 수신
+        // [C2] inflightOps에서 해당 opId 제거 + serverRevision 갱신
         inflightOpsRef.current = inflightOpsRef.current.filter(
           op => op.opId !== message.opId
         );
         serverRevisionRef.current = message.revision;
         console.log(`[OT] ack 수신 — revision=${message.revision}, inflight 남음=${inflightOpsRef.current.length}`);
 
-        // inflight가 모두 처리됐으면 buffer를 전송
+        // [C3] inflightOps가 모두 처리됐으면 bufferOps를 서버로 전송
         if (inflightOpsRef.current.length === 0) {
           flushBuffer();
         }
       }
 
-      // ── remote op: 다른 사용자의 작업 수신 ──
+      // ── [D1~D5] remote op: 다른 사용자의 작업 수신 ──
+      // 순서16번 - 클라이언트 remote op 처리
       if (message.type === 'op') {
+        // [D1] 다른 사용자 op 수신: { type: 'op', op, revision }
         let remoteOp: TextOp = message.op;
         serverRevisionRef.current = message.revision;
 
@@ -178,12 +208,18 @@ function EditorPage() {
          *             → remote op가 적용된 상태에서 내 작업을 적용
          */
 
-        // 1단계: inflightOps에 대해 remoteOp를 변환
+
+        /**
+         * 요약 remote -> inflight 기준 transform
+         * */
+        // [D2] remoteOp를 내 inflightOps에 대해 transform → remoteOp'
+        //      (내가 이미 서버에 보낸 작업 위에 상대 작업을 올바르게 위치 조정)
         for (const inflightOp of inflightOpsRef.current) {
           remoteOp = transformOp(remoteOp, inflightOp);
         }
 
-        // 2단계: remoteOp에 대해 inflightOps를 변환 (각 inflight 순서대로)
+        // [D3] inflightOps를 원본 remoteOp에 대해 transform → inflightOps'
+        //      (서버에서 상대 작업이 먼저 적용된 상태를 반영해 내 작업 위치 보정)
         let prevRemote = message.op as TextOp; // 원본 remote op
         inflightOpsRef.current = inflightOpsRef.current.map(inflightOp => {
           const newInflight = transformOp(inflightOp, prevRemote) as typeof inflightOp;
@@ -191,14 +227,16 @@ function EditorPage() {
           return newInflight;
         });
 
-        // 3단계: bufferOps도 변환된 remoteOp에 대해 transform
+        // [D4] bufferOps를 변환된 remoteOp'에 대해 transform → bufferOps'
+        //      (아직 서버에 보내지 않은 내 작업 위치도 동일하게 보정)
         bufferOpsRef.current = bufferOpsRef.current.map(bufOp => {
           const transformed = transformOp(bufOp, remoteOp);
           remoteOp = transformOp(remoteOp, bufOp);
           return transformed;
         });
 
-        // 4단계: 변환된 remote op를 로컬 문서에 적용
+        // [D5] 변환된 remoteOp'를 로컬 문서에 적용 → UI 업데이트
+        // 순서17번 - 최종 적용
         const newContent = applyOp(contentRef.current, remoteOp);
         contentRef.current = newContent;
         setContent(newContent);
@@ -208,6 +246,10 @@ function EditorPage() {
     };
 
     ws.onclose = () => {
+      // wsRef.current가 이미 다른 연결로 교체됐으면 재연결하지 않음
+      // (React StrictMode cleanup → 새 useEffect 순서로 인한 중복 연결 방지)
+      if (wsRef.current !== ws) return;
+
       console.log('[WS] 연결 끊김 — 3초 후 재연결 시도');
       setConnectionStatus('reconnecting');
 
@@ -223,7 +265,8 @@ function EditorPage() {
     };
   }, [flushBuffer]);
 
-  // 컴포넌트 마운트 시 연결, 언마운트 시 해제
+  // [A1] 컴포넌트 마운트 시 connect() 호출 → WebSocket 연결 시작
+  // 순서1번
   useEffect(() => {
     connect();
     return () => {
@@ -237,35 +280,69 @@ function EditorPage() {
   // ──────────────────────────────────────────────────────────────
 
   /**
-   * textarea 값이 변경될 때마다 호출됩니다.
+   * [B1] 실제 텍스트 변경을 처리합니다.
    *
    * 처리 흐름:
-   * 1. 이전 텍스트와 새 텍스트를 diff → TextOp[] 생성
-   * 2. 각 작업을 로컬 문서에 즉시 적용 (반응성)
-   * 3. bufferOps에 추가
-   * 4. inflight가 없으면 즉시 서버로 전송 (flushBuffer)
+   *   B1. processChange 호출 (onChange 또는 compositionEnd에서)
+   *   B2. diffToOps(old, new) → 변경된 TextOp[] 계산
+   *   B3. 로컬 문서·UI 즉시 업데이트 (사용자 반응성 확보)
+   *   B4. 생성된 op를 bufferOps에 추가
+   *   B5. flushBuffer() → inflight 없으면 서버 전송, 있으면 대기
    */
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newContent = e.target.value;
+  const processChange = useCallback((newContent: string) => {
     const oldContent = contentRef.current;
 
     // 변화 없으면 무시
     if (newContent === oldContent) return;
 
-    // diff: 이전↔새 텍스트 차이를 작업 목록으로 변환
+    // [B2] diff: 이전↔새 텍스트 차이를 TextOp 목록으로 변환
+    // 순서4번
     const ops = diffToOps(oldContent, newContent);
 
     if (ops.length === 0) return;
 
-    // 로컬 문서 즉시 업데이트 (사용자 반응성)
+    // [B3] 로컬 문서·UI 즉시 업데이트 (서버 응답 기다리지 않고 먼저 반영)
+    // 순서5번
     contentRef.current = newContent;
     setContent(newContent);
 
-    // bufferOps에 추가
+    // [B4] 생성된 op를 bufferOps에 추가 (전송 대기 큐)
+    // 순서6번
     bufferOpsRef.current.push(...ops);
 
-    // inflight가 없으면 즉시 전송
+    // [B5] inflightOps 없으면 즉시 서버로 전송, 있으면 ack 후 자동 전송
+    // 서버로 전송
     flushBuffer();
+  }, [flushBuffer]);
+
+  /**
+   * onChange: IME 조합 중에는 화면 동기화만 하고, op 생성은 하지 않습니다.
+   *
+   * 브라우저 네이티브 nativeEvent.isComposing을 사용합니다.
+   * (별도 ref를 쓰면 compositionEnd 미발화 시 ref가 true로 고착되어 입력 전체가 막힘)
+   *
+   * 조합 중(isComposing=true):
+   *   - setContent만 호출 → React가 IME와 싸우지 않도록 화면을 맞춰줌
+   *   - contentRef는 그대로 유지 → 조합 전 마지막 안정 상태 보존
+   * 조합 완료(isComposing=false):
+   *   - processChange → contentRef 기준 diff → OT op 생성 및 전송
+   */
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if ((e.nativeEvent as InputEvent).isComposing) {
+      // IME 조합 중: 화면만 갱신, op는 생성하지 않음
+      setContent(e.target.value);
+      return;
+    }
+    processChange(e.target.value);
+  };
+
+  /**
+   * compositionEnd: 일부 브라우저/OS에서 compositionEnd 이후 onChange가
+   * 발화되지 않는 경우를 대비해 여기서도 processChange를 직접 호출합니다.
+   * (onChange가 발화되면 contentRef 기준 동일 값 → 중복 op 없음)
+   */
+  const handleCompositionEnd = (e: React.CompositionEvent<HTMLTextAreaElement>) => {
+    processChange((e.target as HTMLTextAreaElement).value);
   };
 
   // ──────────────────────────────────────────────────────────────
@@ -319,6 +396,7 @@ function EditorPage() {
       <textarea
         value={content}
         onChange={handleChange}
+        onCompositionEnd={handleCompositionEnd}
         style={{
           width: '100%',
           height: '400px',

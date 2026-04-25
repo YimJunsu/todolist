@@ -1,9 +1,11 @@
 {
   "version": "2.0",
-  "lastUpdated": "2026-03-28T07:20:34.096Z",
+  "lastUpdated": "2026-04-11T10:02:25.719Z",
   "activeFeatures": [
     "server",
-    "client"
+    "client",
+    "routes",
+    "api"
   ],
   "primaryFeature": "server",
   "features": {
@@ -16,7 +18,7 @@
       "documents": {},
       "timestamps": {
         "started": "2026-03-28T07:16:35.934Z",
-        "lastUpdated": "2026-03-28T07:17:38.423Z"
+        "lastUpdated": "2026-04-04T07:12:19.432Z"
       },
       "lastFile": "D:\\project\\todolist\\server\\src\\index.ts"
     },
@@ -29,9 +31,35 @@
       "documents": {},
       "timestamps": {
         "started": "2026-03-28T07:18:39.052Z",
-        "lastUpdated": "2026-03-28T07:20:34.096Z"
+        "lastUpdated": "2026-04-11T10:02:25.719Z"
       },
-      "lastFile": "D:\\project\\todolist\\client\\src\\pages\\TodoPage.tsx"
+      "lastFile": "D:\\project\\todolist\\client\\src\\pages\\CryptoPage.tsx"
+    },
+    "routes": {
+      "phase": "do",
+      "phaseNumber": 3,
+      "matchRate": null,
+      "iterationCount": 0,
+      "requirements": [],
+      "documents": {},
+      "timestamps": {
+        "started": "2026-04-04T07:11:52.910Z",
+        "lastUpdated": "2026-04-04T07:11:52.910Z"
+      },
+      "lastFile": "D:\\project\\todolist\\server\\src\\routes\\ai.routes.ts"
+    },
+    "api": {
+      "phase": "do",
+      "phaseNumber": 3,
+      "matchRate": null,
+      "iterationCount": 0,
+      "requirements": [],
+      "documents": {},
+      "timestamps": {
+        "started": "2026-04-04T07:12:37.363Z",
+        "lastUpdated": "2026-04-04T07:12:37.363Z"
+      },
+      "lastFile": "D:\\project\\todolist\\client\\src\\api\\chatApi.ts"
     }
   },
   "pipeline": {
@@ -42,7 +70,7 @@
   "session": {
     "startedAt": "2026-03-28T06:59:34.199Z",
     "onboardingCompleted": false,
-    "lastActivity": "2026-03-28T07:20:34.096Z"
+    "lastActivity": "2026-04-11T10:02:25.719Z"
   },
   "history": [
     {
@@ -71,6 +99,168 @@
     },
     {
       "timestamp": "2026-03-28T07:20:34.096Z",
+      "feature": "client",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T07:11:17.470Z",
+      "feature": "server",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T07:11:34.985Z",
+      "feature": "server",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T07:11:48.047Z",
+      "feature": "server",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T07:11:52.910Z",
+      "feature": "routes",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T07:12:06.850Z",
+      "feature": "server",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T07:12:19.432Z",
+      "feature": "server",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T07:12:37.363Z",
+      "feature": "api",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T07:12:50.038Z",
+      "feature": "client",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T07:13:24.094Z",
+      "feature": "client",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T07:13:32.829Z",
+      "feature": "client",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T07:14:03.466Z",
+      "feature": "client",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T07:46:35.978Z",
+      "feature": "client",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T07:52:16.242Z",
+      "feature": "client",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T07:52:59.986Z",
+      "feature": "client",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T07:53:19.380Z",
+      "feature": "client",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T07:53:48.246Z",
+      "feature": "client",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T08:00:48.630Z",
+      "feature": "client",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T08:01:01.716Z",
+      "feature": "client",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T08:01:26.470Z",
+      "feature": "client",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T08:01:36.574Z",
+      "feature": "client",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T08:18:37.036Z",
+      "feature": "client",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T08:19:18.689Z",
+      "feature": "client",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-04T08:19:44.783Z",
+      "feature": "client",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-11T09:58:45.432Z",
+      "feature": "client",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-11T09:59:00.092Z",
+      "feature": "client",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-11T09:59:15.212Z",
+      "feature": "client",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-04-11T10:02:25.719Z",
       "feature": "client",
       "phase": "do",
       "action": "updated"

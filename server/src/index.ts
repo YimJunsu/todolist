@@ -32,12 +32,14 @@
  * ─────────────────────────────────────────────────────────────────
  */
 
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Request, Response } from 'express';
 import todoRoutes from './routes/todo.routes.js';
+import aiRoutes from './routes/ai.routes.js';
 import { applyOp, transformAgainstAll } from './ot.js';
 import type { ClientOp, TextOp } from './ot.js';
 
@@ -57,6 +59,7 @@ app.get('/api/test', (req: Request, res: Response) => {
 });
 
 app.use('/api/todos', todoRoutes);
+app.use('/api/ai', aiRoutes);
 
 // ──────────────────────────────────────────────────────────────────
 // WebSocket 서버 설정
@@ -104,6 +107,7 @@ const clients = new Set<WebSocket>();
 // WebSocket 이벤트 처리
 // ──────────────────────────────────────────────────────────────────
 
+// 순서2번
 wss.on('connection', (ws: WebSocket) => {
   clients.add(ws);
   console.log(`[WS] 새 클라이언트 접속 — 현재 ${clients.size}명`);
@@ -130,7 +134,9 @@ wss.on('connection', (ws: WebSocket) => {
     // ────────────────────────────────────────────────────────
     // [에디터 작업] type: 'op'
     // ────────────────────────────────────────────────────────
+    // 순서8번
     if (message.type === 'op' && message.op) {
+      console.log('[message.op] =' + message.op);
       const clientOp = message.op;
 
       // clientOp.revision: 클라이언트가 기반한 서버 revision
@@ -139,11 +145,13 @@ wss.on('connection', (ws: WebSocket) => {
       // 두 값이 다르면 → 클라이언트가 보내는 사이에 다른 작업이 적용됐다는 뜻
       // history[clientOp.revision .. serverRevision] 에 있는 작업들에 대해 transform
 
-      const concurrentOps = history.slice(clientOp.revision);
+      // 순서9번
+      const concurrentOps = history.slice(clientOp.revision)
       //     ^ 클라이언트가 모르는 (서버에서 먼저 처리된) 작업들
 
       // 클라이언트의 작업을 concurrent ops에 맞게 변환
       // (위치 정보를 조정해서 현재 문서 상태에 올바르게 적용할 수 있게 함)
+      // 순서10번
       const transformedOp: TextOp = transformAgainstAll(
         { type: clientOp.type, ...(clientOp.type === 'insert'
           ? { position: clientOp.position, text: (clientOp as any).text }
@@ -153,9 +161,12 @@ wss.on('connection', (ws: WebSocket) => {
       );
 
       // 변환된 작업을 문서에 적용
+      // 순서11번
       editorContent = applyOp(editorContent, transformedOp);
+      // 순서12번
       serverRevision += 1;
       history.push(transformedOp);
+      console.log('[history] : ' + history)
 
       console.log(
         `[WS] op 적용 — revision ${serverRevision - 1}→${serverRevision}`,
@@ -165,6 +176,7 @@ wss.on('connection', (ws: WebSocket) => {
 
       // ── 작업 보낸 클라이언트에게 ack 전송 ──
       // ack를 받은 클라이언트는 inflight 상태를 해제하고 buffer를 보냅니다.
+      // 순서13번 - 너 작업 성공
       ws.send(JSON.stringify({
         type: 'ack',
         opId: clientOp.opId,       // 어떤 작업에 대한 ack인지 식별
@@ -175,6 +187,7 @@ wss.on('connection', (ws: WebSocket) => {
       // 다른 클라이언트들도 자신의 pending 작업에 대해 transform을 수행해야 합니다.
       clients.forEach((client) => {
         if (client !== ws && client.readyState === WebSocket.OPEN) {
+          // 순서14번 op -> 다른 사람에게
           client.send(JSON.stringify({
             type: 'op',
             op: transformedOp,       // 변환 완료된 작업

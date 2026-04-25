@@ -105,6 +105,7 @@ export function transformOp(op1: TextOp, op2: TextOp): TextOp {
  *   // → [{ type: 'delete', position: 1, length: 4 },
  *   //    { type: 'insert', position: 1, text: 'i' }]
  */
+// 순서 4번 op 변환
 export function diffToOps(oldContent: string, newContent: string): TextOp[] {
   // 공통 앞부분 길이
   let start = 0;
