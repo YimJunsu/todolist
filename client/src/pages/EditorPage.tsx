@@ -72,6 +72,9 @@ function EditorPage() {
   // 연결 상태 표시용 (connected / disconnected / reconnecting)
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'reconnecting'>('disconnected');
 
+  // 재연결 시도 횟수 (UI 표시용)
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
+
   // OT 상태: 서버 revision (ref를 쓰는 이유 — 값 변경 시 리렌더링 불필요)
   const serverRevisionRef = useRef<number>(0);
 
@@ -99,6 +102,21 @@ function EditorPage() {
 
   // 재연결 타이머
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 지수 백오프: 1s → 2s → 4s → ... → 최대 30s
+  const reconnectDelayRef = useRef(1000);
+  const reconnectAttemptsRef = useRef(0);
+
+  // Heartbeat: 서버 ping에 응답 없으면 35초 후 강제 재연결
+  const heartbeatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 재연결 OT 동기화 상태
+  // pendingSyncRef: sync_request 전송 후 응답 대기 중인 서버 init 정보
+  const pendingSyncRef = useRef<{ content: string; revision: number } | null>(null);
+  // isSyncingRef: sync_response 대기 중 = true → 수신 op를 큐에 보관
+  const isSyncingRef = useRef(false);
+  // pendingOpsQueueRef: sync 대기 중 수신된 remote op 임시 큐
+  const pendingOpsQueueRef = useRef<Array<{ op: TextOp; revision: number }>>([]);
 
   // ──────────────────────────────────────────────────────────────
   // 서버로 작업 전송
@@ -151,20 +169,112 @@ function EditorPage() {
     ws.onopen = () => {
       console.log('[WS] 연결됨');
       setConnectionStatus('connected');
+      reconnectDelayRef.current = 1000;
+      reconnectAttemptsRef.current = 0;
+      setReconnectAttempts(0);
+      // inflight 폐기: ack 미수신 → 서버 처리 여부 불명확 → 이중 적용 위험
+      inflightOpsRef.current = [];
+      isSyncingRef.current = false;
     };
 
     ws.onmessage = (event: MessageEvent) => {
+      // 메시지 수신 시 heartbeat 타이머 리셋 (35초 내 수신 없으면 강제 재연결)
+      if (heartbeatTimerRef.current) clearTimeout(heartbeatTimerRef.current);
+      heartbeatTimerRef.current = setTimeout(() => {
+        console.warn('[WS] Heartbeat 타임아웃 — 강제 재연결');
+        ws.close();
+      }, 35000);
+
       const message = JSON.parse(event.data);
 
-      // ── [A3·A4] 초기화: 서버의 현재 문서 상태 수신 ──
-      // 순서3번
+      // ── [A3·A4] 초기화 / 재연결 OT 동기화 ──
       if (message.type === 'init') {
-        // [A3] 서버로부터 { type: 'init', content, revision } 수신
-        // [A4] content·serverRevision 초기화 → textarea 표시
-        contentRef.current = message.content;
-        setContent(message.content);
-        serverRevisionRef.current = message.revision;
-        console.log(`[OT] 초기화 — revision=${message.revision}`);
+        const hasPendingOps = bufferOpsRef.current.length > 0;
+        const serverAdvanced = message.revision > serverRevisionRef.current;
+
+        if (!hasPendingOps) {
+          // 케이스 1: 오프라인 작업 없음 → 단순 초기화 (첫 접속 또는 클린 재연결)
+          contentRef.current = message.content;
+          setContent(message.content);
+          serverRevisionRef.current = message.revision;
+          console.log(`[OT] 초기화 — revision=${message.revision}`);
+        } else if (!serverAdvanced) {
+          // 케이스 2: 오프라인 작업 있지만 서버가 advance 안 함 → transform 없이 바로 flush
+          contentRef.current = message.content;
+          setContent(message.content);
+          serverRevisionRef.current = message.revision;
+          console.log(`[OT] 재연결 (서버 동일) — revision=${message.revision}, buffer=${bufferOpsRef.current.length}개`);
+          setTimeout(() => flushBuffer(), 0);
+        } else {
+          // 케이스 3: 오프라인 작업 있고 서버가 앞서 있음 → 히스토리 요청 후 OT merge
+          pendingSyncRef.current = { content: message.content, revision: message.revision };
+          isSyncingRef.current = true;
+          pendingOpsQueueRef.current = [];
+          ws.send(JSON.stringify({ type: 'sync_request', fromRevision: serverRevisionRef.current }));
+          console.log(`[OT] 재연결 sync 요청 — from=${serverRevisionRef.current} server=${message.revision}`);
+        }
+      }
+
+      // ── [E1~E3] sync_response: 서버 히스토리 수신 → OT merge → buffer flush ──
+      if (message.type === 'sync_response') {
+        const pending = pendingSyncRef.current;
+        if (!pending) return;
+        pendingSyncRef.current = null;
+
+        const serverHistory: TextOp[] = message.history;
+        const syncRevision: number = message.revision;
+        console.log(`[OT] sync_response — history=${serverHistory.length}개, revision=${syncRevision}`);
+
+        // [E1] bufferOps를 서버 히스토리 전체에 대해 OT transform (diamond 해결)
+        // 각 histOp에 대해 "bufOp vs histOp" 양방향 transform 수행
+        let transformedBuffer: TextOp[] = [...bufferOpsRef.current];
+        for (const histOp of serverHistory) {
+          let curHistOp: TextOp = histOp;
+          transformedBuffer = transformedBuffer.map(bufOp => {
+            const newBuf = transformOp(bufOp, curHistOp);
+            curHistOp = transformOp(curHistOp, bufOp);
+            return newBuf;
+          });
+        }
+
+        // [E2] 병합 콘텐츠 = 서버 콘텐츠(history 반영 완료) + 변환된 bufferOps 순차 적용
+        let mergedContent = pending.content;
+        for (const op of transformedBuffer) {
+          mergedContent = applyOp(mergedContent, op);
+        }
+
+        contentRef.current = mergedContent;
+        setContent(mergedContent);
+        serverRevisionRef.current = syncRevision;
+        bufferOpsRef.current = transformedBuffer;
+        inflightOpsRef.current = [];
+        console.log(`[OT] 병합 완료 — revision=${syncRevision}, 길이=${mergedContent.length}, pending=${transformedBuffer.length}개`);
+
+        // [E3] sync 중 수신된 큐 처리 (history 범위에 포함된 revision은 스킵)
+        isSyncingRef.current = false;
+        for (const queued of pendingOpsQueueRef.current) {
+          if (queued.revision <= syncRevision) continue; // 이미 history에 포함됨
+          let remoteOp: TextOp = queued.op;
+          serverRevisionRef.current = queued.revision;
+          for (const iOp of inflightOpsRef.current) remoteOp = transformOp(remoteOp, iOp);
+          let prevR = queued.op as TextOp;
+          inflightOpsRef.current = inflightOpsRef.current.map(iOp => {
+            const n = transformOp(iOp, prevR) as typeof iOp;
+            prevR = transformOp(prevR, iOp);
+            return n;
+          });
+          bufferOpsRef.current = bufferOpsRef.current.map(bOp => {
+            const t = transformOp(bOp, remoteOp);
+            remoteOp = transformOp(remoteOp, bOp);
+            return t;
+          });
+          const nc = applyOp(contentRef.current, remoteOp);
+          contentRef.current = nc;
+          setContent(nc);
+        }
+        pendingOpsQueueRef.current = [];
+
+        setTimeout(() => flushBuffer(), 0);
       }
 
       // ── [C1·C2·C3] ack: 내가 보낸 작업이 서버에서 승인됨 ──
@@ -187,6 +297,11 @@ function EditorPage() {
       // ── [D1~D5] remote op: 다른 사용자의 작업 수신 ──
       // 순서16번 - 클라이언트 remote op 처리
       if (message.type === 'op') {
+        // sync_response 대기 중이면 큐에 보관 (sync 완료 후 일괄 처리)
+        if (isSyncingRef.current) {
+          pendingOpsQueueRef.current.push({ op: message.op as TextOp, revision: message.revision });
+          return;
+        }
         // [D1] 다른 사용자 op 수신: { type: 'op', op, revision }
         let remoteOp: TextOp = message.op;
         serverRevisionRef.current = message.revision;
@@ -250,13 +365,20 @@ function EditorPage() {
       // (React StrictMode cleanup → 새 useEffect 순서로 인한 중복 연결 방지)
       if (wsRef.current !== ws) return;
 
-      console.log('[WS] 연결 끊김 — 3초 후 재연결 시도');
+      if (heartbeatTimerRef.current) clearTimeout(heartbeatTimerRef.current);
+
+      const delay = reconnectDelayRef.current;
+      // 지수 백오프: 현재 delay 사용 후 2배로 증가 (최대 30초)
+      reconnectDelayRef.current = Math.min(delay * 2, 30000);
+      reconnectAttemptsRef.current += 1;
+      setReconnectAttempts(reconnectAttemptsRef.current);
+
+      console.log(`[WS] 연결 끊김 — ${delay / 1000}초 후 재연결 시도 (${reconnectAttemptsRef.current}회차)`);
       setConnectionStatus('reconnecting');
 
-      // 자동 재연결 (3초 후)
       reconnectTimerRef.current = setTimeout(() => {
         connect();
-      }, 3000);
+      }, delay);
     };
 
     ws.onerror = () => {
@@ -271,6 +393,7 @@ function EditorPage() {
     connect();
     return () => {
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      if (heartbeatTimerRef.current) clearTimeout(heartbeatTimerRef.current);
       wsRef.current?.close();
     };
   }, [connect]);
@@ -359,7 +482,7 @@ function EditorPage() {
   const statusLabel = {
     connected: '연결됨',
     disconnected: '연결 끊김',
-    reconnecting: '재연결 중...',
+    reconnecting: `재연결 중... (${reconnectAttempts}회차)`,
   }[connectionStatus];
 
   return (

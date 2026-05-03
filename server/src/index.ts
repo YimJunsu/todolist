@@ -103,14 +103,39 @@ const history: TextOp[] = [];
 /** 접속 중인 WebSocket 클라이언트 목록 */
 const clients = new Set<WebSocket>();
 
+/** Ping/Pong heartbeat 응답 추적 (false = pong 미수신 → 다음 주기에 연결 해제) */
+const clientAlive = new Map<WebSocket, boolean>();
+
 // ──────────────────────────────────────────────────────────────────
 // WebSocket 이벤트 처리
 // ──────────────────────────────────────────────────────────────────
 
+// Ping/Pong heartbeat: 30초마다 모든 클라이언트에 ping 전송
+// pong 미응답 클라이언트는 다음 주기에 강제 종료 (silent disconnect 감지)
+const heartbeatInterval = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (clientAlive.get(ws) === false) {
+      console.log('[WS] Heartbeat 무응답 — 클라이언트 강제 종료');
+      clients.delete(ws);
+      clientAlive.delete(ws);
+      return ws.terminate();
+    }
+    clientAlive.set(ws, false);
+    ws.ping();
+  });
+}, 30000);
+
+wss.on('close', () => clearInterval(heartbeatInterval));
+
 // 순서2번
 wss.on('connection', (ws: WebSocket) => {
   clients.add(ws);
+  clientAlive.set(ws, true);
   console.log(`[WS] 새 클라이언트 접속 — 현재 ${clients.size}명`);
+
+  ws.on('pong', () => {
+    clientAlive.set(ws, true);
+  });
 
   // ── 초기화: 새 접속자에게 현재 문서 상태를 전송합니다 ──
   // 클라이언트는 이 revision을 기준으로 첫 작업을 만들게 됩니다.
@@ -121,8 +146,9 @@ wss.on('connection', (ws: WebSocket) => {
   }));
 
   // ── 메시지 수신 처리 ──
+  // fromRevision 타입 명시
   ws.on('message', (data: Buffer) => {
-    let message: { type: string; op?: ClientOp };
+    let message: { type: string; op?: ClientOp; fromRevision?: number };
 
     try {
       message = JSON.parse(data.toString());
@@ -212,17 +238,36 @@ wss.on('connection', (ws: WebSocket) => {
         }
       });
     }
+
+    // ────────────────────────────────────────────────────────
+    // [재연결 OT 동기화] type: 'sync_request'
+    // 재연결 클라이언트가 오프라인 기간의 history ops를 요청합니다.
+    // fromRevision 이후 서버에 적용된 모든 ops를 응답으로 전송합니다.
+    // ────────────────────────────────────────────────────────
+    if (message.type === 'sync_request') {
+      const fromRevision = message.fromRevision ?? 0;
+      const historyOps = history.slice(fromRevision);
+      ws.send(JSON.stringify({
+        type: 'sync_response',
+        history: historyOps,
+        revision: serverRevision,
+        content: editorContent,
+      }));
+      console.log(`[WS] sync_request from=${fromRevision} → ${historyOps.length}개 ops 전송 (현재 revision=${serverRevision})`);
+    }
   });
 
   // ── 접속 종료 처리 ──
   ws.on('close', () => {
     clients.delete(ws);
+    clientAlive.delete(ws);
     console.log(`[WS] 클라이언트 연결 종료 — 현재 ${clients.size}명`);
   });
 
   ws.on('error', (err) => {
     console.error('[WS] 오류:', err.message);
     clients.delete(ws);
+    clientAlive.delete(ws);
   });
 });
 

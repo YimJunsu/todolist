@@ -33,6 +33,12 @@ function TodoPage() {
   // 재연결 타이머
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // 지수 백오프: 1s → 2s → 4s → ... → 최대 30s
+  const reconnectDelayRef = useRef(1000);
+
+  // Heartbeat: 35초 내 메시지 없으면 강제 재연결
+  const heartbeatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // ──────────────────────────────────────────────────────────────
   // Todo 데이터 로드 (HTTP API)
   // ──────────────────────────────────────────────────────────────
@@ -68,9 +74,17 @@ function TodoPage() {
 
     ws.onopen = () => {
       console.log('[Todo WS] 연결됨');
+      reconnectDelayRef.current = 1000;
     };
 
     ws.onmessage = (event: MessageEvent) => {
+      // heartbeat 타이머 리셋
+      if (heartbeatTimerRef.current) clearTimeout(heartbeatTimerRef.current);
+      heartbeatTimerRef.current = setTimeout(() => {
+        console.warn('[Todo WS] Heartbeat 타임아웃 — 강제 재연결');
+        ws.close();
+      }, 35000);
+
       const message = JSON.parse(event.data);
 
       // 다른 사용자가 Todo를 변경했다는 신호 → fetchTodos로 최신 목록 갱신
@@ -83,11 +97,15 @@ function TodoPage() {
     };
 
     ws.onclose = () => {
-      console.log('[Todo WS] 연결 끊김 — 3초 후 재연결');
-      // 자동 재연결
+      if (heartbeatTimerRef.current) clearTimeout(heartbeatTimerRef.current);
+
+      const delay = reconnectDelayRef.current;
+      reconnectDelayRef.current = Math.min(delay * 2, 30000);
+
+      console.log(`[Todo WS] 연결 끊김 — ${delay / 1000}초 후 재연결`);
       reconnectTimerRef.current = setTimeout(() => {
         connect();
-      }, 3000);
+      }, delay);
     };
 
     ws.onerror = () => {
@@ -102,6 +120,7 @@ function TodoPage() {
 
     return () => {
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      if (heartbeatTimerRef.current) clearTimeout(heartbeatTimerRef.current);
       wsRef.current?.close();
     };
   }, [fetchTodos, connect]);
